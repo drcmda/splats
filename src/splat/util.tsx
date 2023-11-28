@@ -3,37 +3,9 @@
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
 
 import * as THREE from 'three'
-import { SharedState } from './Splat'
+import { SharedState, LocalState } from './Splat'
 
-export function getProjectionMatrix(camera: THREE.Camera, pm: THREE.Matrix4) {
-  let mtx = pm.copy(camera.projectionMatrix)
-  mtx.elements[4] *= -1
-  mtx.elements[5] *= -1
-  mtx.elements[6] *= -1
-  mtx.elements[7] *= -1
-  return mtx
-}
-
-export function getModelViewMatrix(camera: THREE.Camera, obj: THREE.Object3D, vm1: THREE.Matrix4, vm2: THREE.Matrix4) {
-  const viewMatrix = vm1.copy(camera.matrixWorld)
-  viewMatrix.elements[1] *= -1.0
-  viewMatrix.elements[4] *= -1.0
-  viewMatrix.elements[6] *= -1.0
-  viewMatrix.elements[9] *= -1.0
-  viewMatrix.elements[13] *= -1.0
-  const mtx = vm2.copy(obj.matrixWorld)
-  mtx.invert()
-  mtx.elements[1] *= -1.0
-  mtx.elements[4] *= -1.0
-  mtx.elements[6] *= -1.0
-  mtx.elements[9] *= -1.0
-  mtx.elements[13] *= -1.0
-  mtx.multiply(viewMatrix)
-  mtx.invert()
-  return mtx
-}
-
-export async function load(src: string, shared: SharedState, worker: Worker, chunkSize = 25000) {
+export async function load(src: string, shared: SharedState, chunkSize = 25000) {
   const data = await fetch(src)
   if (data.body === null) throw new Error('Failed to fetch file')
   const reader = data.body.getReader()
@@ -98,7 +70,7 @@ export async function load(src: string, shared: SharedState, worker: Worker, chu
           const buffer = new Uint8Array(vertexCount * shared.rowLength)
           buffer.set(concatenatedChunksbuffer.subarray(0, buffer.byteLength), 0)
           const matrices = pushDataBuffer(shared, buffer.buffer, vertexCount)
-          worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
+          shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
           bytesProcessed += vertexCount * shared.rowLength
         }
       } catch (error) {
@@ -117,12 +89,107 @@ export async function load(src: string, shared: SharedState, worker: Worker, chu
       }
       let numVertices = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
       const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
-      worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
+      shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
     }
 
     shared.loaded = true
   }
   lazyLoad()
+  return shared
+}
+
+export function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: SharedState, locals: LocalState) {
+  camera.updateMatrixWorld()
+  const target = locals.target.current
+  let projectionMatrix = getProjectionMatrix(camera, locals.pm)
+  target.material.gsProjectionMatrix = projectionMatrix
+  target.material.gsModelViewMatrix = getModelViewMatrix(camera, target, locals.vm1, locals.vm2)
+  gl.getCurrentViewport(locals.viewport)
+  // @ts-ignore
+  target.material.viewport[0] = locals.viewport.z
+  // @ts-ignore
+  target.material.viewport[1] = locals.viewport.w
+  target.material.focal = (locals.viewport.w / 2.0) * Math.abs(projectionMatrix.elements[5])
+
+  if (locals.ready) {
+    locals.ready = false
+    let camera_mtx = getModelViewMatrix(camera, target, locals.vm1, locals.vm2).elements
+    let view = new Float32Array([camera_mtx[2], camera_mtx[6], camera_mtx[10], camera_mtx[14]])
+    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer }, [view.buffer])
+  }
+}
+
+export function handleEvents(shared: SharedState, locals: LocalState) {
+  let splatIndexArray = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight)
+  const splatIndexes = new THREE.InstancedBufferAttribute(splatIndexArray, 1, false)
+  splatIndexes.setUsage(THREE.DynamicDrawUsage)
+
+  const geometry = (locals.target.current.geometry = new THREE.InstancedBufferGeometry())
+  const positionsArray = new Float32Array(6 * 3)
+  const positions = new THREE.BufferAttribute(positionsArray, 3)
+  geometry.setAttribute('position', positions)
+  positions.setXYZ(2, -2.0, 2.0, 0.0)
+  positions.setXYZ(1, 2.0, 2.0, 0.0)
+  positions.setXYZ(0, -2.0, -2.0, 0.0)
+  positions.setXYZ(5, -2.0, -2.0, 0.0)
+  positions.setXYZ(4, 2.0, 2.0, 0.0)
+  positions.setXYZ(3, 2.0, -2.0, 0.0)
+  positions.needsUpdate = true
+  geometry.setAttribute('splatIndex', splatIndexes)
+  geometry.instanceCount = 1
+
+  function listener(e: { data: { key: string; indices: Uint32Array } }) {
+    if (locals.target.current && e.data.key === locals.target.current.uuid) {
+      let indexes = new Uint32Array(e.data.indices)
+      // @ts-ignore
+      geometry.attributes.splatIndex.set(indexes)
+      geometry.attributes.splatIndex.needsUpdate = true
+      geometry.instanceCount = indexes.length
+      locals.ready = true
+    }
+  }
+  shared.worker.addEventListener('message', listener)
+
+  async function wait() {
+    while (true) {
+      const centerAndScaleTextureProperties = shared.gl.properties.get(shared.centerAndScaleTexture)
+      const covAndColorTextureProperties = shared.gl.properties.get(shared.covAndColorTexture)
+      if (centerAndScaleTextureProperties?.__webglTexture && covAndColorTextureProperties?.__webglTexture) break
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    locals.ready = true
+  }
+
+  wait()
+  return () => shared.worker.removeEventListener('message', listener)
+}
+
+function getProjectionMatrix(camera: THREE.Camera, pm: THREE.Matrix4) {
+  let mtx = pm.copy(camera.projectionMatrix)
+  mtx.elements[4] *= -1
+  mtx.elements[5] *= -1
+  mtx.elements[6] *= -1
+  mtx.elements[7] *= -1
+  return mtx
+}
+
+function getModelViewMatrix(camera: THREE.Camera, obj: THREE.Object3D, vm1: THREE.Matrix4, vm2: THREE.Matrix4) {
+  const viewMatrix = vm1.copy(camera.matrixWorld)
+  viewMatrix.elements[1] *= -1.0
+  viewMatrix.elements[4] *= -1.0
+  viewMatrix.elements[6] *= -1.0
+  viewMatrix.elements[9] *= -1.0
+  viewMatrix.elements[13] *= -1.0
+  const mtx = vm2.copy(obj.matrixWorld)
+  mtx.invert()
+  mtx.elements[1] *= -1.0
+  mtx.elements[4] *= -1.0
+  mtx.elements[6] *= -1.0
+  mtx.elements[9] *= -1.0
+  mtx.elements[13] *= -1.0
+  mtx.multiply(viewMatrix)
+  mtx.invert()
+  return mtx
 }
 
 function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCount: number) {

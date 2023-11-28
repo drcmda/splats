@@ -8,7 +8,7 @@ import { extend, useThree, useFrame } from '@react-three/fiber'
 import { suspend } from 'suspend-react'
 import { SplatMaterial } from './SplatMaterial'
 import { createWorker } from './worker'
-import { load, getProjectionMatrix, getModelViewMatrix } from './util'
+import { load, handleEvents, update } from './util'
 
 export type SplatMaterialType = {
   alphaTest?: number
@@ -51,6 +51,15 @@ export type SharedState = {
   centerAndScaleTexture: THREE.DataTexture
 }
 
+export type LocalState = {
+  ready: boolean
+  target: React.MutableRefObject<THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType>>
+  pm: THREE.Matrix4
+  vm1: THREE.Matrix4
+  vm2: THREE.Matrix4
+  viewport: THREE.Vector4
+}
+
 export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000, ...props }: SplatProps) {
   extend({ SplatMaterial })
 
@@ -58,8 +67,15 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
 
-  const [locals] = React.useState(() => ({ ready: false }))
-  const [shared] = suspend(async () => {
+  const [locals] = React.useState<LocalState>(() => ({
+    target: ref,
+    ready: false,
+    pm: new THREE.Matrix4(),
+    vm1: new THREE.Matrix4(),
+    vm2: new THREE.Matrix4(),
+    viewport: new THREE.Vector4(),
+  }))
+  const shared = suspend(async () => {
     const worker = new Worker(
       URL.createObjectURL(
         new Blob(['(', createWorker.toString(), ')(self)'], {
@@ -81,77 +97,15 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
       covAndColorTexture: null!,
       centerAndScaleTexture: null!,
     }
-    await load(src, shared, worker, chunkSize)
-    return [shared]
+    return await load(src, shared, chunkSize)
   }, [src])
 
   React.useEffect(() => {
-    let splatIndexArray = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight)
-    const splatIndexes = new THREE.InstancedBufferAttribute(splatIndexArray, 1, false)
-    splatIndexes.setUsage(THREE.DynamicDrawUsage)
-
-    const geometry = (ref.current.geometry = new THREE.InstancedBufferGeometry())
-    const positionsArray = new Float32Array(6 * 3)
-    const positions = new THREE.BufferAttribute(positionsArray, 3)
-    geometry.setAttribute('position', positions)
-    positions.setXYZ(2, -2.0, 2.0, 0.0)
-    positions.setXYZ(1, 2.0, 2.0, 0.0)
-    positions.setXYZ(0, -2.0, -2.0, 0.0)
-    positions.setXYZ(5, -2.0, -2.0, 0.0)
-    positions.setXYZ(4, 2.0, 2.0, 0.0)
-    positions.setXYZ(3, 2.0, -2.0, 0.0)
-    positions.needsUpdate = true
-    geometry.setAttribute('splatIndex', splatIndexes)
-    geometry.instanceCount = 1
-
-    function listener(e: { data: { key: string; indices: Uint32Array } }) {
-      if (ref.current && e.data.key === ref.current.uuid) {
-        let indexes = new Uint32Array(e.data.indices)
-        // @ts-ignore
-        geometry.attributes.splatIndex.set(indexes)
-        geometry.attributes.splatIndex.needsUpdate = true
-        geometry.instanceCount = indexes.length
-        locals.ready = true
-      }
-    }
-    shared.worker.addEventListener('message', listener)
-
-    async function wait() {
-      while (true) {
-        const centerAndScaleTextureProperties = shared.gl.properties.get(shared.centerAndScaleTexture)
-        const covAndColorTextureProperties = shared.gl.properties.get(shared.covAndColorTexture)
-        if (centerAndScaleTextureProperties?.__webglTexture && covAndColorTextureProperties?.__webglTexture) break
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      locals.ready = true
-    }
-
-    wait()
-    return () => shared.worker.removeEventListener('message', listener)
+    return handleEvents(shared, locals)
   }, [src])
 
-  const pm = new THREE.Matrix4()
-  let vm1 = new THREE.Matrix4()
-  let vm2 = new THREE.Matrix4()
-  let viewport = new THREE.Vector4()
   useFrame(() => {
-    camera.updateMatrixWorld()
-    let projectionMatrix = getProjectionMatrix(camera, pm)
-    ref.current.material.gsProjectionMatrix = projectionMatrix
-    ref.current.material.gsModelViewMatrix = getModelViewMatrix(camera, ref.current, vm1, vm2)
-    gl.getCurrentViewport(viewport)
-    // @ts-ignore
-    ref.current.material.viewport[0] = viewport.z
-    // @ts-ignore
-    ref.current.material.viewport[1] = viewport.w
-    ref.current.material.focal = (viewport.w / 2.0) * Math.abs(projectionMatrix.elements[5])
-
-    if (locals.ready) {
-      locals.ready = false
-      let camera_mtx = getModelViewMatrix(camera, ref.current, vm1, vm2).elements
-      let view = new Float32Array([camera_mtx[2], camera_mtx[6], camera_mtx[10], camera_mtx[14]])
-      shared.worker.postMessage({ method: 'sort', key: ref.current.uuid, view: view.buffer }, [view.buffer])
-    }
+    update(gl, camera, shared, locals)
   })
 
   return (
