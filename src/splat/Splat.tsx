@@ -34,6 +34,14 @@ type SplatProps = {
   chunkSize?: number
 } & JSX.IntrinsicElements['mesh']
 
+export type TargetMesh = THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType> & {
+  ready: boolean
+  pm: THREE.Matrix4
+  vm1: THREE.Matrix4
+  vm2: THREE.Matrix4
+  viewport: THREE.Vector4
+}
+
 export type SharedState = {
   gl: THREE.WebGLRenderer
   worker: Worker
@@ -48,35 +56,16 @@ export type SharedState = {
   covAndColorData: Uint32Array
   covAndColorTexture: THREE.DataTexture
   centerAndScaleTexture: THREE.DataTexture
-  connect(locals: LocalState): () => void
-  update(gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState): void
-}
-
-export type LocalState = {
-  ready: boolean
-  target: React.MutableRefObject<THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType>>
-  pm: THREE.Matrix4
-  vm1: THREE.Matrix4
-  vm2: THREE.Matrix4
-  viewport: THREE.Vector4
+  connect(target: TargetMesh): () => void
+  update(target: TargetMesh, camera: THREE.Camera): void
 }
 
 export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000, ...props }: SplatProps) {
   extend({ SplatMaterial })
 
-  const ref = React.useRef<THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType>>(null!)
+  const ref = React.useRef<TargetMesh>(null!)
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
-
-  // Local state
-  const [locals] = React.useState<LocalState>(() => ({
-    target: ref,
-    ready: false,
-    pm: new THREE.Matrix4(),
-    vm1: new THREE.Matrix4(),
-    vm2: new THREE.Matrix4(),
-    viewport: new THREE.Vector4(),
-  }))
 
   // Shared state, globally memoized, the same url re-uses the same daza
   const shared = useLoader(SplatLoader, src, (loader) => {
@@ -86,12 +75,12 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
 
   // Listen to worker results, apply them to the target mesh
   React.useEffect(() => {
-    return shared.connect(locals)
+    return shared.connect(ref.current)
   }, [src])
 
   // Update the worker
   useFrame(() => {
-    shared.update(gl, camera, locals)
+    shared.update(ref.current, camera)
   })
 
   return (

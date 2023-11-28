@@ -4,7 +4,7 @@
 
 import * as THREE from 'three'
 import { createWorker } from './worker'
-import { SharedState, LocalState } from './Splat'
+import { SharedState, TargetMesh } from './Splat'
 
 export class SplatLoader extends THREE.Loader {
   // WebGLRenderer, needs to be filled out!
@@ -33,8 +33,8 @@ export class SplatLoader extends THREE.Loader {
 }
 
 async function load(src: string, shared: SharedState) {
-  shared.update = (gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState) => update(gl, camera, shared, locals)
-  shared.connect = (locals: LocalState) => connect(shared, locals)
+  shared.update = (target: TargetMesh, camera: THREE.Camera) => update(camera, shared, target)
+  shared.connect = (target: TargetMesh) => connect(shared, target)
   shared.worker = new Worker(
     URL.createObjectURL(
       new Blob(['(', createWorker.toString(), ')(self)'], {
@@ -134,33 +134,38 @@ async function load(src: string, shared: SharedState) {
   return shared
 }
 
-function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: SharedState, locals: LocalState) {
+function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh) {
   camera.updateMatrixWorld()
-  const target = locals.target.current
-  let projectionMatrix = getProjectionMatrix(camera, locals.pm)
+  let projectionMatrix = getProjectionMatrix(camera, target.pm)
   target.material.gsProjectionMatrix = projectionMatrix
-  target.material.gsModelViewMatrix = getModelViewMatrix(camera, target, locals.vm1, locals.vm2)
-  gl.getCurrentViewport(locals.viewport)
+  target.material.gsModelViewMatrix = getModelViewMatrix(camera, target, target.vm1, target.vm2)
+  shared.gl.getCurrentViewport(target.viewport)
   // @ts-ignore
-  target.material.viewport[0] = locals.viewport.z
+  target.viewport[0] = target.viewport.z
   // @ts-ignore
-  target.material.viewport[1] = locals.viewport.w
-  target.material.focal = (locals.viewport.w / 2.0) * Math.abs(projectionMatrix.elements[5])
+  target.viewport[1] = target.viewport.w
+  target.material.focal = (target.viewport.w / 2.0) * Math.abs(projectionMatrix.elements[5])
 
-  if (locals.ready) {
-    locals.ready = false
-    let camera_mtx = getModelViewMatrix(camera, target, locals.vm1, locals.vm2).elements
+  if (target.ready) {
+    target.ready = false
+    let camera_mtx = getModelViewMatrix(camera, target, target.vm1, target.vm2).elements
     let view = new Float32Array([camera_mtx[2], camera_mtx[6], camera_mtx[10], camera_mtx[14]])
     shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer }, [view.buffer])
   }
 }
 
-function connect(shared: SharedState, locals: LocalState) {
+function connect(shared: SharedState, target: TargetMesh) {
+  target.ready = false
+  target.pm = new THREE.Matrix4()
+  target.vm1 = new THREE.Matrix4()
+  target.vm2 = new THREE.Matrix4()
+  target.viewport = new THREE.Vector4()
+
   let splatIndexArray = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight)
   const splatIndexes = new THREE.InstancedBufferAttribute(splatIndexArray, 1, false)
   splatIndexes.setUsage(THREE.DynamicDrawUsage)
 
-  const geometry = (locals.target.current.geometry = new THREE.InstancedBufferGeometry())
+  const geometry = (target.geometry = new THREE.InstancedBufferGeometry())
   const positionsArray = new Float32Array(6 * 3)
   const positions = new THREE.BufferAttribute(positionsArray, 3)
   geometry.setAttribute('position', positions)
@@ -175,13 +180,13 @@ function connect(shared: SharedState, locals: LocalState) {
   geometry.instanceCount = 1
 
   function listener(e: { data: { key: string; indices: Uint32Array } }) {
-    if (locals.target.current && e.data.key === locals.target.current.uuid) {
+    if (target && e.data.key === target.uuid) {
       let indexes = new Uint32Array(e.data.indices)
       // @ts-ignore
       geometry.attributes.splatIndex.set(indexes)
       geometry.attributes.splatIndex.needsUpdate = true
       geometry.instanceCount = indexes.length
-      locals.ready = true
+      target.ready = true
     }
   }
   shared.worker.addEventListener('message', listener)
@@ -193,7 +198,7 @@ function connect(shared: SharedState, locals: LocalState) {
       if (centerAndScaleTextureProperties?.__webglTexture && covAndColorTextureProperties?.__webglTexture) break
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
-    locals.ready = true
+    target.ready = true
   }
 
   wait()
