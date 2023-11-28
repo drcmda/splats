@@ -90,7 +90,7 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
         listen: null!,
         loaded: false,
         loadedVertexCount: 0,
-        chunkSize: 25000,
+        chunkSize,
         rowLength: 3 * 4 + 3 * 4 + 4 + 4,
         maxVertexes: 0,
         bufferTextureWidth: 0,
