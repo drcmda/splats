@@ -7,8 +7,7 @@ import * as React from 'react'
 import { extend, useThree, useFrame } from '@react-three/fiber'
 import { suspend } from 'suspend-react'
 import { SplatMaterial } from './SplatMaterial'
-import { createWorker } from './worker'
-import { load, handleEvents, update } from './util'
+import { load } from './util'
 
 export type SplatMaterialType = {
   alphaTest?: number
@@ -50,6 +49,8 @@ export type SharedState = {
   covAndColorData: Uint32Array
   covAndColorTexture: THREE.DataTexture
   centerAndScaleTexture: THREE.DataTexture
+  listen(locals: LocalState): () => void
+  update(gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState): void
 }
 
 export type LocalState = {
@@ -68,6 +69,7 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
 
+  // Local state
   const [locals] = React.useState<LocalState>(() => ({
     target: ref,
     ready: false,
@@ -76,18 +78,16 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
     vm2: new THREE.Matrix4(),
     viewport: new THREE.Vector4(),
   }))
+
+  // Shared state, globally memoized, the same url re-uses the same daza
   const shared = suspend(async () => {
     return await load(
       src,
       {
         gl,
-        worker: new Worker(
-          URL.createObjectURL(
-            new Blob(['(', createWorker.toString(), ')(self)'], {
-              type: 'application/javascript',
-            }),
-          ),
-        ),
+        worker: null!,
+        update: null!,
+        listen: null!,
         loaded: false,
         loadedVertexCount: 0,
         chunkSize: 25000,
@@ -103,12 +103,14 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
     )
   }, [src])
 
+  // Listen to worker results, apply them to the target mesh
   React.useEffect(() => {
-    return handleEvents(shared, locals)
+    return shared.listen(locals)
   }, [src])
 
+  // Update the worker
   useFrame(() => {
-    update(gl, camera, shared, locals)
+    shared.update(gl, camera, locals)
   })
 
   return (

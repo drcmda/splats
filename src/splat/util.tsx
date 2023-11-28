@@ -3,9 +3,19 @@
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
 
 import * as THREE from 'three'
+import { createWorker } from './worker'
 import { SharedState, LocalState } from './Splat'
 
 export async function load(src: string, shared: SharedState) {
+  shared.update = (gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState) => update(gl, camera, shared, locals)
+  shared.listen = (locals: LocalState) => listen(shared, locals)
+  shared.worker = new Worker(
+    URL.createObjectURL(
+      new Blob(['(', createWorker.toString(), ')(self)'], {
+        type: 'application/javascript',
+      }),
+    ),
+  )
   const data = await fetch(src)
   if (data.body === null) throw new Error('Failed to fetch file')
   const reader = data.body.getReader()
@@ -98,7 +108,7 @@ export async function load(src: string, shared: SharedState) {
   return shared
 }
 
-export function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: SharedState, locals: LocalState) {
+function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: SharedState, locals: LocalState) {
   camera.updateMatrixWorld()
   const target = locals.target.current
   let projectionMatrix = getProjectionMatrix(camera, locals.pm)
@@ -119,7 +129,7 @@ export function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: Sh
   }
 }
 
-export function handleEvents(shared: SharedState, locals: LocalState) {
+function listen(shared: SharedState, locals: LocalState) {
   let splatIndexArray = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight)
   const splatIndexes = new THREE.InstancedBufferAttribute(splatIndexArray, 1, false)
   splatIndexes.setUsage(THREE.DynamicDrawUsage)
