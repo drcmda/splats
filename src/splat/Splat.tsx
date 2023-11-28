@@ -1,6 +1,8 @@
 // Based on:
 //   Kevin Kwok https://github.com/antimatter15/splat
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
+// Adapted by:
+//   Paul Henschel twitter.com/0xca0a
 
 import * as THREE from 'three'
 import * as React from 'react'
@@ -74,14 +76,10 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   }) as SharedState
 
   // Listen to worker results, apply them to the target mesh
-  React.useEffect(() => {
-    return shared.connect(ref.current)
-  }, [src])
+  React.useEffect(() => shared.connect(ref.current), [src])
 
   // Update the worker
-  useFrame(() => {
-    shared.update(ref.current, camera)
-  })
+  useFrame(() => shared.update(ref.current, camera))
 
   return (
     <mesh ref={ref} frustumCulled={false} {...props}>
