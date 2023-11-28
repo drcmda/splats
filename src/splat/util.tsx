@@ -6,9 +6,35 @@ import * as THREE from 'three'
 import { createWorker } from './worker'
 import { SharedState, LocalState } from './Splat'
 
-export async function load(src: string, shared: SharedState) {
+export class SplatLoader extends THREE.Loader {
+  // WebGLRenderer, needs to be filled out!
+  gl: THREE.WebGLRenderer = null!
+  // Default chunk size for lazy loading
+  chunkSize: number = 25000
+  load(url: string, onLoad: (data: SharedState) => void) {
+    load(url, {
+      gl: this.gl,
+      worker: null!,
+      update: null!,
+      connect: null!,
+      loaded: false,
+      loadedVertexCount: 0,
+      chunkSize: this.chunkSize,
+      rowLength: 3 * 4 + 3 * 4 + 4 + 4,
+      maxVertexes: 0,
+      bufferTextureWidth: 0,
+      bufferTextureHeight: 0,
+      centerAndScaleData: null!,
+      covAndColorData: null!,
+      covAndColorTexture: null!,
+      centerAndScaleTexture: null!,
+    }).then(onLoad)
+  }
+}
+
+async function load(src: string, shared: SharedState) {
   shared.update = (gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState) => update(gl, camera, shared, locals)
-  shared.listen = (locals: LocalState) => listen(shared, locals)
+  shared.connect = (locals: LocalState) => connect(shared, locals)
   shared.worker = new Worker(
     URL.createObjectURL(
       new Blob(['(', createWorker.toString(), ')(self)'], {
@@ -129,7 +155,7 @@ function update(gl: THREE.WebGLRenderer, camera: THREE.Camera, shared: SharedSta
   }
 }
 
-function listen(shared: SharedState, locals: LocalState) {
+function connect(shared: SharedState, locals: LocalState) {
   let splatIndexArray = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight)
   const splatIndexes = new THREE.InstancedBufferAttribute(splatIndexArray, 1, false)
   splatIndexes.setUsage(THREE.DynamicDrawUsage)

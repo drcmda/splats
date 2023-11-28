@@ -4,10 +4,9 @@
 
 import * as THREE from 'three'
 import * as React from 'react'
-import { extend, useThree, useFrame } from '@react-three/fiber'
-import { suspend } from 'suspend-react'
+import { extend, useThree, useFrame, useLoader } from '@react-three/fiber'
 import { SplatMaterial } from './SplatMaterial'
-import { load } from './util'
+import { SplatLoader } from './util'
 
 export type SplatMaterialType = {
   alphaTest?: number
@@ -49,7 +48,7 @@ export type SharedState = {
   covAndColorData: Uint32Array
   covAndColorTexture: THREE.DataTexture
   centerAndScaleTexture: THREE.DataTexture
-  listen(locals: LocalState): () => void
+  connect(locals: LocalState): () => void
   update(gl: THREE.WebGLRenderer, camera: THREE.Camera, locals: LocalState): void
 }
 
@@ -80,32 +79,14 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   }))
 
   // Shared state, globally memoized, the same url re-uses the same daza
-  const shared = suspend(async () => {
-    return await load(
-      src,
-      {
-        gl,
-        worker: null!,
-        update: null!,
-        listen: null!,
-        loaded: false,
-        loadedVertexCount: 0,
-        chunkSize,
-        rowLength: 3 * 4 + 3 * 4 + 4 + 4,
-        maxVertexes: 0,
-        bufferTextureWidth: 0,
-        bufferTextureHeight: 0,
-        centerAndScaleData: null!,
-        covAndColorData: null!,
-        covAndColorTexture: null!,
-        centerAndScaleTexture: null!,
-      },
-    )
-  }, [src])
+  const shared = useLoader(SplatLoader, src, (loader) => {
+    loader.gl = gl
+    loader.chunkSize = chunkSize
+  }) as SharedState
 
   // Listen to worker results, apply them to the target mesh
   React.useEffect(() => {
-    return shared.listen(locals)
+    return shared.connect(locals)
   }, [src])
 
   // Update the worker
