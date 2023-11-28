@@ -43,6 +43,7 @@ export type SharedState = {
   loadedVertexCount: number
   rowLength: number
   maxVertexes: number
+  chunkSize: number
   bufferTextureWidth: number
   bufferTextureHeight: number
   centerAndScaleData: Float32Array
@@ -76,28 +77,30 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
     viewport: new THREE.Vector4(),
   }))
   const shared = suspend(async () => {
-    const worker = new Worker(
-      URL.createObjectURL(
-        new Blob(['(', createWorker.toString(), ')(self)'], {
-          type: 'application/javascript',
-        }),
-      ),
+    return await load(
+      src,
+      {
+        gl,
+        worker: new Worker(
+          URL.createObjectURL(
+            new Blob(['(', createWorker.toString(), ')(self)'], {
+              type: 'application/javascript',
+            }),
+          ),
+        ),
+        loaded: false,
+        loadedVertexCount: 0,
+        chunkSize: 25000,
+        rowLength: 3 * 4 + 3 * 4 + 4 + 4,
+        maxVertexes: 0,
+        bufferTextureWidth: 0,
+        bufferTextureHeight: 0,
+        centerAndScaleData: null!,
+        covAndColorData: null!,
+        covAndColorTexture: null!,
+        centerAndScaleTexture: null!,
+      },
     )
-    const shared: SharedState = {
-      gl,
-      worker,
-      loaded: false,
-      loadedVertexCount: 0,
-      rowLength: 3 * 4 + 3 * 4 + 4 + 4,
-      maxVertexes: 0,
-      bufferTextureWidth: 0,
-      bufferTextureHeight: 0,
-      centerAndScaleData: null!,
-      covAndColorData: null!,
-      covAndColorTexture: null!,
-      centerAndScaleTexture: null!,
-    }
-    return await load(src, shared, chunkSize)
   }, [src])
 
   React.useEffect(() => {

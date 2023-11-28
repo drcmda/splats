@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import { SharedState, LocalState } from './Splat'
 
-export async function load(src: string, shared: SharedState, chunkSize = 25000) {
+export async function load(src: string, shared: SharedState) {
   const data = await fetch(src)
   if (data.body === null) throw new Error('Failed to fetch file')
   const reader = data.body.getReader()
@@ -53,7 +53,7 @@ export async function load(src: string, shared: SharedState, chunkSize = 25000) 
         bytesDownloaded += value.length
         chunks.push(value)
         const bytesRemains = bytesDownloaded - bytesProcessed
-        if (totalDownloadBytes != undefined && bytesRemains > shared.rowLength * chunkSize) {
+        if (totalDownloadBytes != undefined && bytesRemains > shared.rowLength * shared.chunkSize) {
           let vertexCount = Math.floor(bytesRemains / shared.rowLength)
           const concatenatedChunksbuffer = new Uint8Array(bytesRemains)
           let offset = 0
