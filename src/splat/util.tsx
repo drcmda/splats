@@ -43,7 +43,34 @@ export async function load(src: string, shared: SharedState, worker: Worker, chu
   let totalDownloadBytes = _totalDownloadBytes ? parseInt(_totalDownloadBytes) : undefined
   if (totalDownloadBytes == undefined) throw new Error('Failed to get content length')
 
-  initGL(shared, Math.floor(totalDownloadBytes / shared.rowLength))
+  let numVertices = Math.floor(totalDownloadBytes / shared.rowLength)
+  const context = shared.gl.getContext()
+  let mexTextureSize = context.getParameter(context.MAX_TEXTURE_SIZE)
+  shared.maxVertexes = mexTextureSize * mexTextureSize
+
+  if (numVertices > shared.maxVertexes) numVertices = shared.maxVertexes
+  shared.bufferTextureWidth = mexTextureSize
+  shared.bufferTextureHeight = Math.floor((numVertices - 1) / mexTextureSize) + 1
+
+  shared.centerAndScaleData = new Float32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
+  shared.covAndColorData = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
+  shared.centerAndScaleTexture = new THREE.DataTexture(
+    shared.centerAndScaleData,
+    shared.bufferTextureWidth,
+    shared.bufferTextureHeight,
+    THREE.RGBAFormat,
+    THREE.FloatType,
+  )
+  shared.centerAndScaleTexture.needsUpdate = true
+  shared.covAndColorTexture = new THREE.DataTexture(
+    shared.covAndColorData,
+    shared.bufferTextureWidth,
+    shared.bufferTextureHeight,
+    THREE.RGBAIntegerFormat,
+    THREE.UnsignedIntType,
+  )
+  shared.covAndColorTexture.internalFormat = 'RGBA32UI'
+  shared.covAndColorTexture.needsUpdate = true
 
   async function lazyLoad() {
     const chunks: Array<Uint8Array> = []
@@ -88,44 +115,14 @@ export async function load(src: string, shared: SharedState, worker: Worker, chu
         concatenatedChunks.set(chunk, offset)
         offset += chunk.length
       }
-      let numVertexes = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
-      const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertexes)
+      let numVertices = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
+      const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
       worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
     }
 
     shared.loaded = true
   }
   lazyLoad()
-}
-
-function initGL(shared: SharedState, numVertexes: number) {
-  const context = shared.gl.getContext()
-  let mexTextureSize = context.getParameter(context.MAX_TEXTURE_SIZE)
-  shared.maxVertexes = mexTextureSize * mexTextureSize
-
-  if (numVertexes > shared.maxVertexes) numVertexes = shared.maxVertexes
-  shared.bufferTextureWidth = mexTextureSize
-  shared.bufferTextureHeight = Math.floor((numVertexes - 1) / mexTextureSize) + 1
-
-  shared.centerAndScaleData = new Float32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
-  shared.covAndColorData = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
-  shared.centerAndScaleTexture = new THREE.DataTexture(
-    shared.centerAndScaleData,
-    shared.bufferTextureWidth,
-    shared.bufferTextureHeight,
-    THREE.RGBAFormat,
-    THREE.FloatType,
-  )
-  shared.centerAndScaleTexture.needsUpdate = true
-  shared.covAndColorTexture = new THREE.DataTexture(
-    shared.covAndColorData,
-    shared.bufferTextureWidth,
-    shared.bufferTextureHeight,
-    THREE.RGBAIntegerFormat,
-    THREE.UnsignedIntType,
-  )
-  shared.covAndColorTexture.internalFormat = 'RGBA32UI'
-  shared.covAndColorTexture.needsUpdate = true
 }
 
 function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCount: number) {
