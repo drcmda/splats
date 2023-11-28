@@ -12,11 +12,17 @@ export class SplatLoader extends THREE.Loader {
   // Default chunk size for lazy loading
   chunkSize: number = 25000
   load(url: string, onLoad: (data: SharedState) => void) {
-    load(url, {
+    const shared = {
       gl: this.gl,
-      worker: null!,
-      update: null!,
-      connect: null!,
+      worker: new Worker(
+        URL.createObjectURL(
+          new Blob(['(', createWorker.toString(), ')(self)'], {
+            type: 'application/javascript',
+          }),
+        ),
+      ),
+      update: (target: TargetMesh, camera: THREE.Camera) => update(camera, shared, target),
+      connect:(target: TargetMesh) => connect(shared, target),
       loaded: false,
       loadedVertexCount: 0,
       chunkSize: this.chunkSize,
@@ -28,20 +34,12 @@ export class SplatLoader extends THREE.Loader {
       covAndColorData: null!,
       covAndColorTexture: null!,
       centerAndScaleTexture: null!,
-    }).then(onLoad)
+    }
+    load(url, shared).then(onLoad)
   }
 }
 
 async function load(src: string, shared: SharedState) {
-  shared.update = (target: TargetMesh, camera: THREE.Camera) => update(camera, shared, target)
-  shared.connect = (target: TargetMesh) => connect(shared, target)
-  shared.worker = new Worker(
-    URL.createObjectURL(
-      new Blob(['(', createWorker.toString(), ')(self)'], {
-        type: 'application/javascript',
-      }),
-    ),
-  )
   const data = await fetch(src)
   if (data.body === null) throw new Error('Failed to fetch file')
   const reader = data.body.getReader()
@@ -127,7 +125,6 @@ async function load(src: string, shared: SharedState) {
       const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
       shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
     }
-
     shared.loaded = true
   }
   lazyLoad()
