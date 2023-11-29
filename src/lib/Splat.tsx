@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import * as React from 'react'
 import { extend, useThree, useFrame, useLoader } from '@react-three/fiber'
 import { SplatMaterial } from './SplatMaterial'
-import { SplatLoader } from './util'
+import { SplatLoader } from './SplatLoader'
 
 export type SplatMaterialType = {
   alphaTest?: number
