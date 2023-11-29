@@ -123,8 +123,6 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
       #include <alphatest_fragment>
       #include <alphahash_fragment>
       gl_FragColor = diffuseColor;
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
     }
   `,
 );

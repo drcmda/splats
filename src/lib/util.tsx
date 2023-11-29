@@ -11,7 +11,12 @@ export class SplatLoader extends THREE.Loader {
   gl: THREE.WebGLRenderer = null!
   // Default chunk size for lazy loading
   chunkSize: number = 25000
-  load(url: string, onLoad: (data: SharedState) => void) {
+  load(
+    url: string,
+    onLoad: (data: SharedState) => void,
+    onProgress?: (event: ProgressEvent) => void,
+    onError?: (event: ErrorEvent) => void,
+  ) {
     const shared = {
       gl: this.gl,
       worker: new Worker(
@@ -35,19 +40,31 @@ export class SplatLoader extends THREE.Loader {
       covAndColorTexture: null!,
       centerAndScaleTexture: null!,
     }
-    load(url, shared).then(onLoad)
+    load(url, shared, this.manager).then(onLoad)
   }
 }
 
-async function load(src: string, shared: SharedState) {
+async function load(
+  src: string,
+  shared: SharedState,
+  manager?: THREE.LoadingManager,
+  onProgress?: (event: ProgressEvent) => void,
+  onError?: (event: ErrorEvent) => void,
+) {
   const data = await fetch(src)
-  if (data.body === null) throw new Error('Failed to fetch file')
+  if (data.body === null) {
+    onError?.(new ErrorEvent('Failed to fetch file'))
+    return
+  }
   const reader = data.body.getReader()
   let bytesDownloaded = 0
   let bytesProcessed = 0
   let _totalDownloadBytes = data.headers.get('Content-Length')
   let totalDownloadBytes = _totalDownloadBytes ? parseInt(_totalDownloadBytes) : undefined
-  if (totalDownloadBytes == undefined) throw new Error('Failed to get content length')
+  if (totalDownloadBytes == undefined) {
+    onError?.(new ErrorEvent('Failed to get content length'))
+    return
+  }
 
   let numVertices = Math.floor(totalDownloadBytes / shared.rowLength)
   const context = shared.gl.getContext()
@@ -141,22 +158,20 @@ function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, h
   target.material.focal = (target.viewport.w / 2.0) * Math.abs(camera.projectionMatrix.elements[5])
 
   if (hashed ? !target.sorted && target.ready : target.ready) {
-    target.ready = false;
+    target.ready = false
     const view = new Float32Array([
       target.modelViewMatrix.elements[2],
       -target.modelViewMatrix.elements[6],
       target.modelViewMatrix.elements[10],
       target.modelViewMatrix.elements[14],
-    ]);
-    shared.worker.postMessage(
-      { method: "sort", key: target.uuid, view: view.buffer },
-      [view.buffer],
-    );
+    ])
+    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer }, [view.buffer])
   }
 }
 
 function connect(shared: SharedState, target: TargetMesh) {
   target.ready = false
+  target.sorted = false
   target.pm = new THREE.Matrix4()
   target.vm1 = new THREE.Matrix4()
   target.vm2 = new THREE.Matrix4()
@@ -179,7 +194,6 @@ function connect(shared: SharedState, target: TargetMesh) {
   positions.needsUpdate = true
   geometry.setAttribute('splatIndex', splatIndexes)
   geometry.instanceCount = 1
-  target.sorted = false
 
   function listener(e: { data: { key: string; indices: Uint32Array } }) {
     if (target && e.data.key === target.uuid) {
@@ -211,7 +225,7 @@ function connect(shared: SharedState, target: TargetMesh) {
 function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCount: number) {
   const context = shared.gl.getContext()
   if (shared.loadedVertexCount + vertexCount > shared.maxVertexes) vertexCount = shared.maxVertexes - shared.loadedVertexCount
-  if (vertexCount <= 0) throw new Error('Failed to push data buffer')
+  if (vertexCount <= 0) return new Float32Array()
 
   const u_buffer = new Uint8Array(buffer)
   const f_buffer = new Float32Array(buffer)
