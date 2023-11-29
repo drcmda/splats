@@ -7,17 +7,16 @@ export function createWorker(self: any) {
 
   function sortSplats(view: Float32Array) {
     const vertexCount = matrices.length / 16
-    let threshold = -0.0001
+    const threshold = -0.0001
     let maxDepth = -Infinity
     let minDepth = Infinity
-    let depthList = new Float32Array(vertexCount)
-    let sizeList = new Int32Array(depthList.buffer)
-    let validIndexList = new Int32Array(vertexCount)
+    const depthList = new Float32Array(vertexCount)
+    const sizeList = new Int32Array(depthList.buffer)
+    const validIndexList = new Int32Array(vertexCount)
     let validCount = 0
     for (let i = 0; i < vertexCount; i++) {
       // Sign of depth is reversed
-      let depth =
-        view[0] * matrices[i * 16 + 12] + view[1] * matrices[i * 16 + 13] + view[2] * matrices[i * 16 + 14] + view[3]
+      const depth = view[0] * matrices[i * 16 + 12] + view[1] * matrices[i * 16 + 13] + view[2] * matrices[i * 16 + 14] + view[3]
       // Skip behind of camera and small, transparent splat
       if (depth < 0 && matrices[i * 16 + 15] > threshold * depth) {
         depthList[validCount] = depth
@@ -29,17 +28,15 @@ export function createWorker(self: any) {
     }
 
     // This is a 16 bit single-pass counting sort
-    let depthInv = (256 * 256 - 1) / (maxDepth - minDepth)
-    let counts0 = new Uint32Array(256 * 256)
-    let starts0 = new Uint32Array(256 * 256)
-    let depthIndex = new Uint32Array(validCount)
-
+    const depthInv = (256 * 256 - 1) / (maxDepth - minDepth)
+    const counts0 = new Uint32Array(256 * 256)
     for (let i = 0; i < validCount; i++) {
       sizeList[i] = ((depthList[i] - minDepth) * depthInv) | 0
       counts0[sizeList[i]]++
     }
-    
+    const starts0 = new Uint32Array(256 * 256)
     for (let i = 1; i < 256 * 256; i++) starts0[i] = starts0[i - 1] + counts0[i - 1]
+    const depthIndex = new Uint32Array(validCount)
     for (let i = 0; i < validCount; i++) depthIndex[starts0[sizeList[i]]++] = validIndexList[i]
     return depthIndex
   }

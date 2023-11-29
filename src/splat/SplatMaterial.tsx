@@ -12,8 +12,6 @@ export type SplatMaterialType = {
   covAndColorTexture?: THREE.DataTexture
   viewport?: Float32Array
   focal?: number
-  gsProjectionMatrix?: THREE.Matrix4
-  gsModelViewMatrix?: THREE.Matrix4
 } & JSX.IntrinsicElements['shaderMaterial']
 
 declare global {
@@ -31,19 +29,14 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
     focal: 1000.0,
     centerAndScaleTexture: null,
     covAndColorTexture: null,
-    gsProjectionMatrix: /* @__PURE__ */ new THREE.Matrix4(),
-    gsModelViewMatrix: /* @__PURE__ */ new THREE.Matrix4(),
   },
   /*glsl*/ `
-    #include <common>
     precision highp sampler2D;
     precision highp usampler2D;
     out vec4 vColor;
-    out vec2 vPos;
+    out vec3 vPosition;
     uniform vec2 viewport;
     uniform float focal;
-    uniform mat4 gsProjectionMatrix;
-    uniform mat4 gsModelViewMatrix;
     attribute uint splatIndex;
     uniform sampler2D centerAndScaleTexture;
     uniform usampler2D covAndColorTexture;
@@ -62,8 +55,8 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
       ivec2 texPos = ivec2(splatIndex%uint(texSize.x), splatIndex/uint(texSize.x));
       vec4 centerAndScaleData = texelFetch(centerAndScaleTexture, texPos, 0);
       vec4 center = vec4(centerAndScaleData.xyz, 1);
-      vec4 camspace = gsModelViewMatrix * center;
-      vec4 pos2d = gsProjectionMatrix * camspace;
+      vec4 camspace = modelViewMatrix * center;
+      vec4 pos2d = projectionMatrix * camspace;
 
       float bounds = 1.2 * pos2d.w;
       if (pos2d.z < -pos2d.w || pos2d.x < -bounds || pos2d.x > bounds
@@ -83,12 +76,12 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
       );
 
       mat3 J = mat3(
-        focal / camspace.z, 0., -(focal * camspace.x) / (camspace.z * camspace.z), 
-        0., -focal / camspace.z, (focal * camspace.y) / (camspace.z * camspace.z), 
+        focal / camspace.z, 0., -(focal * camspace.x) / (camspace.z * camspace.z),
+        0., focal / camspace.z, -(focal * camspace.y) / (camspace.z * camspace.z),
         0., 0., 0.
       );
 
-      mat3 W = transpose(mat3(gsModelViewMatrix));
+      mat3 W = transpose(mat3(modelViewMatrix));
       mat3 T = W * J;
       mat3 cov = transpose(T) * Vrk * T;
       vec2 vCenter = vec2(pos2d) / pos2d.w;
@@ -109,12 +102,7 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
         float((colorUint >> uint(16)) & uint(0xFF)) / 255.0,
         float(colorUint >> uint(24)) / 255.0
       );
-      vPos = position.xy;
-
-      vec3 transformed = vec3( position );
-      #ifdef USE_ALPHAHASH    
-        vPosition = vec3( position );      
-      #endif
+      vPosition = position;
 
       gl_Position = vec4(
         vCenter 
@@ -123,13 +111,12 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
     }
     `,
   /*glsl*/ `
-    #include <common>
     #include <alphatest_pars_fragment>
     #include <alphahash_pars_fragment>
     in vec4 vColor;
-    in vec2 vPos;
+    in vec3 vPosition;
     void main () {
-      float A = -dot(vPos, vPos);
+      float A = -dot(vPosition.xy, vPosition.xy);
       if (A < -4.0) discard;
       float B = exp(A) * vColor.a;
       vec4 diffuseColor = vec4(vColor.rgb, B);
@@ -137,5 +124,5 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
       #include <alphahash_fragment>
       gl_FragColor = diffuseColor;
     }
-  `
-)
+  `,
+);

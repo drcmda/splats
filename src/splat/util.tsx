@@ -21,8 +21,8 @@ export class SplatLoader extends THREE.Loader {
           }),
         ),
       ),
-      update: (target: TargetMesh, camera: THREE.Camera) => update(camera, shared, target),
-      connect:(target: TargetMesh) => connect(shared, target),
+      update: (target: TargetMesh, camera: THREE.Camera, hashed: boolean) => update(camera, shared, target, hashed),
+      connect: (target: TargetMesh) => connect(shared, target),
       loaded: false,
       loadedVertexCount: 0,
       chunkSize: this.chunkSize,
@@ -131,23 +131,27 @@ async function load(src: string, shared: SharedState) {
   return shared
 }
 
-function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh) {
+function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, hashed: boolean) {
   camera.updateMatrixWorld()
-  let projectionMatrix = getProjectionMatrix(camera, target.pm)
-  target.material.gsProjectionMatrix = projectionMatrix
-  target.material.gsModelViewMatrix = getModelViewMatrix(camera, target, target.vm1, target.vm2)
   shared.gl.getCurrentViewport(target.viewport)
   // @ts-ignore
   target.viewport[0] = target.viewport.z
   // @ts-ignore
   target.viewport[1] = target.viewport.w
-  target.material.focal = (target.viewport.w / 2.0) * Math.abs(projectionMatrix.elements[5])
+  target.material.focal = (target.viewport.w / 2.0) * Math.abs(camera.projectionMatrix.elements[5])
 
-  if (target.ready) {
-    target.ready = false
-    let camera_mtx = getModelViewMatrix(camera, target, target.vm1, target.vm2).elements
-    let view = new Float32Array([camera_mtx[2], camera_mtx[6], camera_mtx[10], camera_mtx[14]])
-    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer }, [view.buffer])
+  if (hashed ? !target.sorted && target.ready : target.ready) {
+    target.ready = false;
+    const view = new Float32Array([
+      target.modelViewMatrix.elements[2],
+      -target.modelViewMatrix.elements[6],
+      target.modelViewMatrix.elements[10],
+      target.modelViewMatrix.elements[14],
+    ]);
+    shared.worker.postMessage(
+      { method: "sort", key: target.uuid, view: view.buffer },
+      [view.buffer],
+    );
   }
 }
 
@@ -184,6 +188,7 @@ function connect(shared: SharedState, target: TargetMesh) {
       geometry.attributes.splatIndex.needsUpdate = true
       geometry.instanceCount = indexes.length
       target.ready = true
+      target.sorted = true
     }
   }
   shared.worker.addEventListener('message', listener)
@@ -202,72 +207,45 @@ function connect(shared: SharedState, target: TargetMesh) {
   return () => shared.worker.removeEventListener('message', listener)
 }
 
-function getProjectionMatrix(camera: THREE.Camera, pm: THREE.Matrix4) {
-  let mtx = pm.copy(camera.projectionMatrix)
-  mtx.elements[4] *= -1
-  mtx.elements[5] *= -1
-  mtx.elements[6] *= -1
-  mtx.elements[7] *= -1
-  return mtx
-}
-
-function getModelViewMatrix(camera: THREE.Camera, obj: THREE.Object3D, vm1: THREE.Matrix4, vm2: THREE.Matrix4) {
-  const viewMatrix = vm1.copy(camera.matrixWorld)
-  viewMatrix.elements[1] *= -1.0
-  viewMatrix.elements[4] *= -1.0
-  viewMatrix.elements[6] *= -1.0
-  viewMatrix.elements[9] *= -1.0
-  viewMatrix.elements[13] *= -1.0
-  const mtx = vm2.copy(obj.matrixWorld)
-  mtx.invert()
-  mtx.elements[1] *= -1.0
-  mtx.elements[4] *= -1.0
-  mtx.elements[6] *= -1.0
-  mtx.elements[9] *= -1.0
-  mtx.elements[13] *= -1.0
-  mtx.multiply(viewMatrix)
-  mtx.invert()
-  return mtx
-}
-
 function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCount: number) {
   const context = shared.gl.getContext()
   if (shared.loadedVertexCount + vertexCount > shared.maxVertexes) vertexCount = shared.maxVertexes - shared.loadedVertexCount
   if (vertexCount <= 0) throw new Error('Failed to push data buffer')
 
-  let u_buffer = new Uint8Array(buffer)
-  let f_buffer = new Float32Array(buffer)
-  let matrices = new Float32Array(vertexCount * 16)
+  const u_buffer = new Uint8Array(buffer)
+  const f_buffer = new Float32Array(buffer)
+  const matrices = new Float32Array(vertexCount * 16)
 
   const covAndColorData_uint8 = new Uint8Array(shared.covAndColorData.buffer)
   const covAndColorData_int16 = new Int16Array(shared.covAndColorData.buffer)
   for (let i = 0; i < vertexCount; i++) {
-    let quat = new THREE.Quaternion(
-      (u_buffer[32 * i + 28 + 1] - 128) / 128.0,
+    const quat = new THREE.Quaternion(
+      -(u_buffer[32 * i + 28 + 1] - 128) / 128.0,
       (u_buffer[32 * i + 28 + 2] - 128) / 128.0,
-      -(u_buffer[32 * i + 28 + 3] - 128) / 128.0,
-      (u_buffer[32 * i + 28 + 0] - 128) / 128.0,
+      (u_buffer[32 * i + 28 + 3] - 128) / 128.0,
+      -(u_buffer[32 * i + 28 + 0] - 128) / 128.0,
     )
-    let center = new THREE.Vector3(f_buffer[8 * i + 0], f_buffer[8 * i + 1], -f_buffer[8 * i + 2])
-    let scale = new THREE.Vector3(f_buffer[8 * i + 3 + 0], f_buffer[8 * i + 3 + 1], f_buffer[8 * i + 3 + 2])
+    quat.invert()
+    const center = new THREE.Vector3(f_buffer[8 * i + 0], f_buffer[8 * i + 1], -f_buffer[8 * i + 2])
+    const scale = new THREE.Vector3(f_buffer[8 * i + 3 + 0], f_buffer[8 * i + 3 + 1], f_buffer[8 * i + 3 + 2])
 
-    let mtx = new THREE.Matrix4()
+    const mtx = new THREE.Matrix4()
     mtx.makeRotationFromQuaternion(quat)
     mtx.transpose()
     mtx.scale(scale)
-    let mtx_t = mtx.clone()
+    const mtx_t = mtx.clone()
     mtx.transpose()
     mtx.premultiply(mtx_t)
     mtx.setPosition(center)
 
-    let cov_indexes = [0, 1, 2, 5, 6, 10]
+    const cov_indexes = [0, 1, 2, 5, 6, 10]
     let max_value = 0.0
     for (let j = 0; j < cov_indexes.length; j++)
       if (Math.abs(mtx.elements[cov_indexes[j]]) > max_value) max_value = Math.abs(mtx.elements[cov_indexes[j]])
 
     let destOffset = shared.loadedVertexCount * 4 + i * 4
     shared.centerAndScaleData[destOffset + 0] = center.x
-    shared.centerAndScaleData[destOffset + 1] = center.y
+    shared.centerAndScaleData[destOffset + 1] = -center.y
     shared.centerAndScaleData[destOffset + 2] = center.z
     shared.centerAndScaleData[destOffset + 3] = max_value / 32767.0
 
@@ -291,8 +269,8 @@ function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCoun
   while (vertexCount > 0) {
     let width = 0
     let height = 0
-    let xoffset = shared.loadedVertexCount % shared.bufferTextureWidth
-    let yoffset = Math.floor(shared.loadedVertexCount / shared.bufferTextureWidth)
+    const xoffset = shared.loadedVertexCount % shared.bufferTextureWidth
+    const yoffset = Math.floor(shared.loadedVertexCount / shared.bufferTextureWidth)
     if (shared.loadedVertexCount % shared.bufferTextureWidth != 0) {
       width = Math.min(shared.bufferTextureWidth, xoffset + vertexCount) - xoffset
       height = 1
