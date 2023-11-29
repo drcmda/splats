@@ -19,6 +19,7 @@ export class SplatLoader extends THREE.Loader {
   ) {
     const shared = {
       gl: this.gl,
+      url: this.manager.resolveURL(url),
       worker: new Worker(
         URL.createObjectURL(
           new Blob(['(', createWorker.toString(), ')(self)'], {
@@ -26,6 +27,7 @@ export class SplatLoader extends THREE.Loader {
           }),
         ),
       ),
+      manager: this.manager,
       update: (target: TargetMesh, camera: THREE.Camera, hashed: boolean) => update(camera, shared, target, hashed),
       connect: (target: TargetMesh) => connect(shared, target),
       loaded: false,
@@ -40,31 +42,25 @@ export class SplatLoader extends THREE.Loader {
       covAndColorTexture: null!,
       centerAndScaleTexture: null!,
     }
-    load(url, shared, this.manager).then(onLoad)
+    load(shared, onProgress)
+      .then(onLoad)
+      .catch((e) => {
+        onError?.(e)
+        shared.manager.itemError(shared.url)
+      })
   }
 }
 
-async function load(
-  src: string,
-  shared: SharedState,
-  manager?: THREE.LoadingManager,
-  onProgress?: (event: ProgressEvent) => void,
-  onError?: (event: ErrorEvent) => void,
-) {
-  const data = await fetch(src)
-  if (data.body === null) {
-    onError?.(new ErrorEvent('Failed to fetch file'))
-    return
-  }
+async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => void) {
+  shared.manager.itemStart(shared.url)
+  const data = await fetch(shared.url)
+  if (data.body === null) throw 'Failed to fetch file'
   const reader = data.body.getReader()
   let bytesDownloaded = 0
   let bytesProcessed = 0
   let _totalDownloadBytes = data.headers.get('Content-Length')
   let totalDownloadBytes = _totalDownloadBytes ? parseInt(_totalDownloadBytes) : undefined
-  if (totalDownloadBytes == undefined) {
-    onError?.(new ErrorEvent('Failed to get content length'))
-    return
-  }
+  if (totalDownloadBytes == undefined) throw 'Failed to get content length'
 
   let numVertices = Math.floor(totalDownloadBytes / shared.rowLength)
   const context = shared.gl.getContext()
@@ -97,11 +93,23 @@ async function load(
 
   async function lazyLoad() {
     const chunks: Array<Uint8Array> = []
+    let lastReportedProgress = 0
+    const lengthComputable = totalDownloadBytes !== 0
     while (true) {
       try {
         const { value, done } = await reader.read()
         if (done) break
         bytesDownloaded += value.length
+
+        if (totalDownloadBytes != undefined) {
+          const percent = (bytesDownloaded / totalDownloadBytes) * 100
+          if (onProgress && percent - lastReportedProgress > 1) {
+            const event = new ProgressEvent('progress', { lengthComputable, loaded: bytesDownloaded, total: totalDownloadBytes })
+            onProgress(event)
+            lastReportedProgress = percent
+          }
+        }
+
         chunks.push(value)
         const bytesRemains = bytesDownloaded - bytesProcessed
         if (totalDownloadBytes != undefined && bytesRemains > shared.rowLength * shared.chunkSize) {
@@ -123,6 +131,11 @@ async function load(
           const matrices = pushDataBuffer(shared, buffer.buffer, vertexCount)
           shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
           bytesProcessed += vertexCount * shared.rowLength
+
+          if (onProgress) {
+            const event = new ProgressEvent('progress', { lengthComputable, loaded: totalDownloadBytes, total: totalDownloadBytes })
+            onProgress(event)
+          }
         }
       } catch (error) {
         console.error(error)
@@ -143,6 +156,7 @@ async function load(
       shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
     }
     shared.loaded = true
+    shared.manager.itemEnd(shared.url)
   }
   lazyLoad()
   return shared
@@ -225,7 +239,7 @@ function connect(shared: SharedState, target: TargetMesh) {
 function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCount: number) {
   const context = shared.gl.getContext()
   if (shared.loadedVertexCount + vertexCount > shared.maxVertexes) vertexCount = shared.maxVertexes - shared.loadedVertexCount
-  if (vertexCount <= 0) return new Float32Array()
+  if (vertexCount <= 0) throw 'Failed to parse file'
 
   const u_buffer = new Uint8Array(buffer)
   const f_buffer = new Float32Array(buffer)

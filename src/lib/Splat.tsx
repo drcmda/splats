@@ -44,8 +44,10 @@ export type TargetMesh = THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderM
 }
 
 export type SharedState = {
+  url: string,
   gl: THREE.WebGLRenderer
   worker: Worker
+  manager: THREE.LoadingManager
   loaded: boolean
   loadedVertexCount: number
   rowLength: number
