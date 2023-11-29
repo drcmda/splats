@@ -179,6 +179,7 @@ function connect(shared: SharedState, target: TargetMesh) {
   positions.needsUpdate = true
   geometry.setAttribute('splatIndex', splatIndexes)
   geometry.instanceCount = 1
+  target.sorted = false
 
   function listener(e: { data: { key: string; indices: Uint32Array } }) {
     if (target && e.data.key === target.uuid) {

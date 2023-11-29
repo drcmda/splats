@@ -90,7 +90,7 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
         centerAndScaleTexture={shared.centerAndScaleTexture}
         covAndColorTexture={shared.covAndColorTexture}
         depthWrite={alphaHash ? true : alphaTest > 0}
-        blending={THREE.CustomBlending}
+        blending={alphaHash ? THREE.NormalBlending : THREE.CustomBlending}
         blendSrcAlpha={THREE.OneFactor}
         alphaHash={!!alphaHash}
         toneMapped={false}
