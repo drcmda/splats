@@ -4,21 +4,24 @@
 
 export function createWorker(self: any) {
   let matrices = new Float32Array()
+  console.log('.')
 
-  function sortSplats(view: Float32Array) {
+  function sortSplats(view: Float32Array, hashed: boolean = false) {
     const vertexCount = matrices.length / 16
     const threshold = -0.0001
+
     let maxDepth = -Infinity
     let minDepth = Infinity
     const depthList = new Float32Array(vertexCount)
     const sizeList = new Int32Array(depthList.buffer)
     const validIndexList = new Int32Array(vertexCount)
+
     let validCount = 0
     for (let i = 0; i < vertexCount; i++) {
       // Sign of depth is reversed
       const depth = view[0] * matrices[i * 16 + 12] + view[1] * matrices[i * 16 + 13] + view[2] * matrices[i * 16 + 14] + view[3]
       // Skip behind of camera and small, transparent splat
-      if (depth < 0 && matrices[i * 16 + 15] > threshold * depth) {
+      if (hashed || (depth < 0 && matrices[i * 16 + 15] > threshold * depth)) {
         depthList[validCount] = depth
         validIndexList[validCount] = i
         validCount++
@@ -41,7 +44,7 @@ export function createWorker(self: any) {
     return depthIndex
   }
 
-  self.onmessage = (e: { data: { method: string; key: string; view: Float32Array; matrices: Float32Array } }) => {
+  self.onmessage = (e: { data: { method: string; key: string; view: Float32Array; matrices: Float32Array; hashed: boolean } }) => {
     if (e.data.method == 'push') {
       const new_matrices = new Float32Array(e.data.matrices)
       if (matrices === undefined) {
@@ -55,7 +58,7 @@ export function createWorker(self: any) {
     }
     if (e.data.method == 'sort') {
       if (matrices !== undefined) {
-        const indices = sortSplats(new Float32Array(e.data.view))
+        const indices = sortSplats(new Float32Array(e.data.view), e.data.hashed)
         self.postMessage({ indices, key: e.data.key }, [indices.buffer])
       }
     }

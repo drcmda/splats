@@ -78,7 +78,6 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
 
   // Listen to worker results, apply them to the target mesh
   React.useEffect(() => shared.connect(ref.current), [src])
-
   // Update the worker
   useFrame(() => shared.update(ref.current, camera, alphaHash))
 

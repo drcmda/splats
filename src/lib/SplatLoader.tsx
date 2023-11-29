@@ -1,6 +1,7 @@
 // Based on:
 //   Kevin Kwok https://github.com/antimatter15/splat
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
+//   Luc Palombo https://twitter.com/_swiftp
 
 import * as THREE from 'three'
 import { createWorker } from './worker'
@@ -171,7 +172,8 @@ function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, h
   target.viewport[1] = target.viewport.w
   target.material.focal = (target.viewport.w / 2.0) * Math.abs(camera.projectionMatrix.elements[5])
 
-  if (hashed ? !target.sorted && target.ready : target.ready) {
+  if (target.ready) {
+    if (hashed && target.sorted) return
     target.ready = false
     const view = new Float32Array([
       target.modelViewMatrix.elements[2],
@@ -179,13 +181,13 @@ function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, h
       target.modelViewMatrix.elements[10],
       target.modelViewMatrix.elements[14],
     ])
-    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer }, [view.buffer])
+    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer, hashed }, [view.buffer])
+    if (hashed && shared.loaded) target.sorted = true
   }
 }
 
 function connect(shared: SharedState, target: TargetMesh) {
   target.ready = false
-  target.sorted = false
   target.pm = new THREE.Matrix4()
   target.vm1 = new THREE.Matrix4()
   target.vm2 = new THREE.Matrix4()
@@ -217,7 +219,6 @@ function connect(shared: SharedState, target: TargetMesh) {
       geometry.attributes.splatIndex.needsUpdate = true
       geometry.instanceCount = indexes.length
       target.ready = true
-      target.sorted = true
     }
   }
   shared.worker.addEventListener('message', listener)

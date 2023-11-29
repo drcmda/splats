@@ -1,6 +1,7 @@
 // Based on:
 //   Kevin Kwok https://github.com/antimatter15/splat
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
+//   Luc Palombo https://twitter.com/_swiftp
 
 import * as THREE from 'three'
 import { shaderMaterial } from '@react-three/drei'
