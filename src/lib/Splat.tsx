@@ -17,8 +17,6 @@ export type SplatMaterialType = {
   covAndColorTexture?: THREE.DataTexture
   viewport?: Float32Array
   focal?: number
-  gsProjectionMatrix?: THREE.Matrix4
-  gsModelViewMatrix?: THREE.Matrix4
 } & JSX.IntrinsicElements['shaderMaterial']
 
 declare global {
@@ -38,6 +36,7 @@ type SplatProps = {
 
 export type TargetMesh = THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType> & {
   ready: boolean
+  sorted: boolean
   pm: THREE.Matrix4
   vm1: THREE.Matrix4
   vm2: THREE.Matrix4
@@ -59,7 +58,7 @@ export type SharedState = {
   covAndColorTexture: THREE.DataTexture
   centerAndScaleTexture: THREE.DataTexture
   connect(target: TargetMesh): () => void
-  update(target: TargetMesh, camera: THREE.Camera): void
+  update(target: TargetMesh, camera: THREE.Camera, hashed: boolean): void
 }
 
 export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000, ...props }: SplatProps) {
@@ -79,21 +78,22 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   React.useEffect(() => shared.connect(ref.current), [src])
 
   // Update the worker
-  useFrame(() => shared.update(ref.current, camera))
+  useFrame(() => shared.update(ref.current, camera, alphaHash))
 
   return (
     <mesh ref={ref} frustumCulled={false} {...props}>
       <splatMaterial
-        key={`${alphaTest}/${alphaHash}`}
-        transparent
+        key={`${alphaTest}/${alphaHash}${SplatMaterial.key}`}
+        transparent={!alphaHash}
         depthTest
         alphaTest={alphaHash ? 0 : alphaTest}
         centerAndScaleTexture={shared.centerAndScaleTexture}
         covAndColorTexture={shared.covAndColorTexture}
         depthWrite={alphaHash ? true : alphaTest > 0}
-        blending={THREE.CustomBlending}
+        blending={alphaHash ? THREE.NormalBlending : THREE.CustomBlending}
         blendSrcAlpha={THREE.OneFactor}
         alphaHash={!!alphaHash}
+        toneMapped={false}
       />
     </mesh>
   )
