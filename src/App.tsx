@@ -29,7 +29,6 @@ export default function App() {
         <planeGeometry args={[20, 20]} />
         <meshBasicMaterial color='white' />
       </mesh>*/}
-      do 16:00
 
       <CameraControls />
       <StatsGl />

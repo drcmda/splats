@@ -11,7 +11,7 @@ export type SplatMaterialType = {
   alphaHash?: boolean
   centerAndScaleTexture?: THREE.DataTexture
   covAndColorTexture?: THREE.DataTexture
-  viewport?: Float32Array
+  viewport?: THREE.Vector2
   focal?: number
 } & JSX.IntrinsicElements['shaderMaterial']
 
@@ -26,7 +26,7 @@ declare global {
 export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
   {
     alphaTest: 0,
-    viewport: /* @__PURE__ */ new Float32Array([1980, 1080]),
+    viewport: /* @__PURE__ */ new THREE.Vector2(1980, 1080),    
     focal: 1000.0,
     centerAndScaleTexture: null,
     covAndColorTexture: null,
@@ -36,11 +36,12 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
     precision highp usampler2D;
     out vec4 vColor;
     out vec3 vPosition;
+    uniform vec2 resolution;
     uniform vec2 viewport;
     uniform float focal;
     attribute uint splatIndex;
     uniform sampler2D centerAndScaleTexture;
-    uniform usampler2D covAndColorTexture;
+    uniform usampler2D covAndColorTexture;    
 
     vec2 unpackInt16(in uint value) {
       int v = int(value);

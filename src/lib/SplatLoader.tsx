@@ -65,12 +65,12 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
 
   let numVertices = Math.floor(totalDownloadBytes / shared.rowLength)
   const context = shared.gl.getContext()
-  let mexTextureSize = context.getParameter(context.MAX_TEXTURE_SIZE)
-  shared.maxVertexes = mexTextureSize * mexTextureSize
+  let maxTextureSize = context.getParameter(context.MAX_TEXTURE_SIZE)
+  shared.maxVertexes = maxTextureSize * maxTextureSize
 
   if (numVertices > shared.maxVertexes) numVertices = shared.maxVertexes
-  shared.bufferTextureWidth = mexTextureSize
-  shared.bufferTextureHeight = Math.floor((numVertices - 1) / mexTextureSize) + 1
+  shared.bufferTextureWidth = maxTextureSize
+  shared.bufferTextureHeight = Math.floor((numVertices - 1) / maxTextureSize) + 1
 
   shared.centerAndScaleData = new Float32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
   shared.covAndColorData = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
@@ -164,12 +164,12 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
 }
 
 function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, hashed: boolean) {
-  camera.updateMatrixWorld()
+  camera.updateMatrixWorld()  
   shared.gl.getCurrentViewport(target.viewport)
   // @ts-ignore
-  target.viewport[0] = target.viewport.z
+  target.material.viewport.x = target.viewport.z
   // @ts-ignore
-  target.viewport[1] = target.viewport.w
+  target.material.viewport.y = target.viewport.w
   target.material.focal = (target.viewport.w / 2.0) * Math.abs(camera.projectionMatrix.elements[5])
 
   if (target.ready) {
