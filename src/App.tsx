@@ -14,7 +14,7 @@ export default function App() {
         <Splat alphaTest={0.1} src='nike.splat' scale={0.5} position={[0, 1.6, -1.5]} rotation={[Math.PI, 0, Math.PI]} />
       </Float>
       <Float rotationIntensity={2} speed={4}>
-        <Splat alphaHash src='plush.splat' scale={0.5} position={[-1.5, 1.6, 1]} />
+        <Splat alphaTest={0.1} src='plush.splat' scale={0.5} position={[-1.5, 1.6, 1]} />
       </Float>
       <Splat src='kitchen-7k.splat' position={[0, 0.25, 0]} />
 

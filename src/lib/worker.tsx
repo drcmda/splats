@@ -4,7 +4,6 @@
 
 export function createWorker(self: any) {
   let matrices = new Float32Array()
-  console.log('.')
 
   function sortSplats(view: Float32Array, hashed: boolean = false) {
     const vertexCount = matrices.length / 16
