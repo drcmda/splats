@@ -164,7 +164,7 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
 }
 
 function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, hashed: boolean) {
-  camera.updateMatrixWorld()  
+  camera.updateMatrixWorld()    
   shared.gl.getCurrentViewport(target.viewport)
   // @ts-ignore
   target.material.viewport.x = target.viewport.z
