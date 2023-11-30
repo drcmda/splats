@@ -69,8 +69,6 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
   const ref = React.useRef<TargetMesh>(null!)
   const gl = useThree((state) => state.gl)
   const camera = useThree((state) => state.camera)
-  const size = useThree((state) => state.size)
-  const viewport = useThree((state) => state.viewport)
 
   // Shared state, globally memoized, the same url re-uses the same daza
   const shared = useLoader(SplatLoader, src, (loader) => {
