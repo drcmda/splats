@@ -14,7 +14,7 @@ extend({ TAARenderPass, OutputPass })
 export default function App() {
   const { root } = useControls({ root: { value: 'default', options: ['default', 'physics', 'alphahash', 'truck'] } })
   return (
-    <Canvas linear flat dpr={1.5} gl={{ antialias: false }} camera={{ position: [4, 1.5, -4], fov: 35 }}>
+    <Canvas dpr={1.5} gl={{ antialias: false }} camera={{ position: [4, 1.5, -4], fov: 35 }}>
       <color attach='background' args={['white']} />
       <CameraControls makeDefault />
       <StatsGl />

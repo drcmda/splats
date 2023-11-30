@@ -26,7 +26,7 @@ declare global {
 export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
   {
     alphaTest: 0,
-    viewport: /* @__PURE__ */ new THREE.Vector2(1980, 1080),    
+    viewport: /* @__PURE__ */ new THREE.Vector2(1980, 1080),
     focal: 1000.0,
     centerAndScaleTexture: null,
     covAndColorTexture: null,
@@ -126,7 +126,7 @@ export const SplatMaterial = /* @__PURE__ */ shaderMaterial(
       #include <alphahash_fragment>
       gl_FragColor = diffuseColor;
       #include <tonemapping_fragment>
-      #include <encodings_fragment>
+      #include <${parseInt(THREE.REVISION.replace(/\D+/g, '')) >= 154 ? 'colorspace_fragment' : 'encodings_fragment'}>
     }
   `,
-);
+)

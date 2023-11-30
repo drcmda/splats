@@ -164,7 +164,7 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
 }
 
 function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, hashed: boolean) {
-  camera.updateMatrixWorld()    
+  camera.updateMatrixWorld()
   shared.gl.getCurrentViewport(target.viewport)
   // @ts-ignore
   target.material.viewport.x = target.viewport.z
@@ -285,9 +285,11 @@ function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCoun
 
     // RGBA
     destOffset = shared.loadedVertexCount * 16 + (i * 4 + 3) * 4
-    covAndColorData_uint8[destOffset + 0] = u_buffer[32 * i + 24 + 0]
-    covAndColorData_uint8[destOffset + 1] = u_buffer[32 * i + 24 + 1]
-    covAndColorData_uint8[destOffset + 2] = u_buffer[32 * i + 24 + 2]
+    const col = new THREE.Color(u_buffer[32 * i + 24 + 0] / 255, u_buffer[32 * i + 24 + 1] / 255, u_buffer[32 * i + 24 + 2] / 255)
+    col.convertSRGBToLinear()
+    covAndColorData_uint8[destOffset + 0] = col.r * 255
+    covAndColorData_uint8[destOffset + 1] = col.g * 255
+    covAndColorData_uint8[destOffset + 2] = col.b * 255
     covAndColorData_uint8[destOffset + 3] = u_buffer[32 * i + 24 + 3]
 
     // Store scale and transparent to remove splat in sorting process

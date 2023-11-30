@@ -29,6 +29,7 @@ declare global {
 
 type SplatProps = {
   src: string
+  toneMapped?: boolean
   alphaTest?: number
   alphaHash?: boolean
   chunkSize?: number
@@ -63,7 +64,7 @@ export type SharedState = {
   update(target: TargetMesh, camera: THREE.Camera, hashed: boolean): void
 }
 
-export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000, ...props }: SplatProps) {
+export function Splat({ src, toneMapped = false, alphaTest = 0, alphaHash = false, chunkSize = 20000, ...props }: SplatProps) {
   extend({ SplatMaterial })
 
   const ref = React.useRef<TargetMesh>(null!)
@@ -94,7 +95,7 @@ export function Splat({ src, alphaTest = 0, alphaHash = false, chunkSize = 25000
         blending={alphaHash ? THREE.NormalBlending : THREE.CustomBlending}
         blendSrcAlpha={THREE.OneFactor}
         alphaHash={!!alphaHash}
-        toneMapped={false}
+        toneMapped={toneMapped}
       />
     </mesh>
   )
