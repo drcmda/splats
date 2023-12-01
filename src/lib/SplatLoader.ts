@@ -4,7 +4,6 @@
 //   Luc Palombo https://twitter.com/_swiftp
 
 import * as THREE from 'three'
-import { createWorker } from './worker'
 import { SharedState, TargetMesh } from './Splat'
 
 export class SplatLoader extends THREE.Loader {
@@ -21,13 +20,7 @@ export class SplatLoader extends THREE.Loader {
     const shared = {
       gl: this.gl,
       url: this.manager.resolveURL(url),
-      worker: new Worker(
-        URL.createObjectURL(
-          new Blob(['(', createWorker.toString(), ')(self)'], {
-            type: 'application/javascript',
-          }),
-        ),
-      ),
+      worker: new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }),
       manager: this.manager,
       update: (target: TargetMesh, camera: THREE.Camera, hashed: boolean) => update(camera, shared, target, hashed),
       connect: (target: TargetMesh) => connect(shared, target),
