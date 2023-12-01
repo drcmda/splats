@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { Canvas, extend, useThree } from '@react-three/fiber'
 import { Float, CameraControls, StatsGl, Effects } from '@react-three/drei'
 import { Physics, RigidBody, CuboidCollider, BallCollider } from '@react-three/rapier'
@@ -87,11 +88,14 @@ function Shoe(props: any) {
 
 function Post() {
   const taa = useRef<TAARenderPass>(null!)
+  const gl = useThree((state) => state.gl)
   const scene = useThree((state) => state.scene)
   const camera = useThree((state) => state.camera)
   const controls = useThree((state) => state.controls)
 
   useEffect(() => {
+    const oldToneMapping = gl.toneMapping
+    gl.toneMapping = THREE.NoToneMapping
     if (controls) {
       const wake = () => {
         taa.current.accumulate = false
@@ -105,6 +109,7 @@ function Post() {
       controls.addEventListener('wake', wake)
       controls.addEventListener('sleep', rest)
       return () => {
+        gl.toneMapping = oldToneMapping
         controls.removeEventListener('wake', wake)
         controls.removeEventListener('sleep', rest)
       }
