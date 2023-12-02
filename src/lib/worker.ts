@@ -3,10 +3,6 @@
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
 
 export function createWorker(self: any) {
-  // Based on:
-  //   Kevin Kwok https://github.com/antimatter15/splat
-  //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
-
   let matrices = new Float32Array()
   let offset = 0
 
