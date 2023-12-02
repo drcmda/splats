@@ -130,7 +130,7 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
           const buffer = new Uint8Array(vertexCount * shared.rowLength)
           buffer.set(concatenatedChunksbuffer.subarray(0, buffer.byteLength), 0)
           const matrices = pushDataBuffer(shared, buffer.buffer, vertexCount)
-          shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
+          shared.worker.postMessage({ method: 'push', length: numVertices * 16, matrices: matrices.buffer }, [matrices.buffer])
           bytesProcessed += vertexCount * shared.rowLength
 
           if (onProgress) {
@@ -154,7 +154,7 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
       }
       let numVertices = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
       const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
-      shared.worker.postMessage({ method: 'push', matrices: matrices.buffer }, [matrices.buffer])
+      shared.worker.postMessage({ method: 'push', length: numVertices * 16, matrices: matrices.buffer }, [matrices.buffer])
     }
     shared.loaded = true
     shared.manager.itemEnd(shared.url)

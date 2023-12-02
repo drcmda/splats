@@ -3,7 +3,12 @@
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
 
 export function createWorker(self: any) {
+  // Based on:
+  //   Kevin Kwok https://github.com/antimatter15/splat
+  //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
+
   let matrices = new Float32Array()
+  let offset = 0
 
   function sortSplats(view: Float32Array, hashed: boolean = false) {
     const vertexCount = matrices.length / 16
@@ -43,21 +48,18 @@ export function createWorker(self: any) {
     return depthIndex
   }
 
-  self.onmessage = (e: { data: { method: string; key: string; view: Float32Array; matrices: Float32Array; hashed: boolean } }) => {
+  self.onmessage = (e: {
+    data: { method: string; length: number; key: string; view: Float32Array; matrices: Float32Array; hashed: boolean }
+  }) => {
     if (e.data.method == 'push') {
+      if (offset === 0) matrices = new Float32Array(e.data.length)
       const new_matrices = new Float32Array(e.data.matrices)
-      if (matrices === undefined) {
-        matrices = new_matrices
-      } else {
-        const resized = new Float32Array(matrices.length + new_matrices.length)
-        resized.set(matrices)
-        resized.set(new_matrices, matrices.length)
-        matrices = resized
-      }
-    }
-    if (e.data.method == 'sort') {
+      matrices.set(new_matrices, offset)
+      offset += new_matrices.length
+    } else if (e.data.method == 'sort') {
       if (matrices !== undefined) {
         const indices = sortSplats(new Float32Array(e.data.view), e.data.hashed)
+        // @ts-ignore
         self.postMessage({ indices, key: e.data.key }, [indices.buffer])
       }
     }
