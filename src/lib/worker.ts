@@ -3,7 +3,7 @@
 //   Quadjr https://github.com/quadjr/aframe-gaussian-splatting
 
 export function createWorker(self: any) {
-  let matrices = new Float32Array()
+  let matrices: Float32Array = null!
   let offset = 0
 
   function sortSplats(view: Float32Array, hashed: boolean = false) {
@@ -53,7 +53,7 @@ export function createWorker(self: any) {
       matrices.set(new_matrices, offset)
       offset += new_matrices.length
     } else if (e.data.method == 'sort') {
-      if (matrices !== undefined) {
+      if (matrices !== null) {
         const indices = sortSplats(new Float32Array(e.data.view), e.data.hashed)
         // @ts-ignore
         self.postMessage({ indices, key: e.data.key }, [indices.buffer])

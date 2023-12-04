@@ -9,20 +9,12 @@ import * as React from 'react'
 import { extend, useThree, useFrame, useLoader } from '@react-three/fiber'
 import { SplatMaterial } from './SplatMaterial'
 import { SplatLoader } from './SplatLoader'
-
-export type SplatMaterialType = {
-  alphaTest?: number
-  alphaHash?: boolean
-  centerAndScaleTexture?: THREE.DataTexture
-  covAndColorTexture?: THREE.DataTexture
-  viewport?: THREE.Vector2  
-  focal?: number
-} & JSX.IntrinsicElements['shaderMaterial']
+import type { TargetMesh, SplatMaterialType, SharedState } from './types'
 
 declare global {
   namespace JSX {
     interface IntrinsicElements {
-      splatMaterial: SplatMaterialType
+      splatMaterial: SplatMaterialType & JSX.IntrinsicElements['shaderMaterial']
     }
   }
 }
@@ -35,36 +27,7 @@ type SplatProps = {
   chunkSize?: number
 } & JSX.IntrinsicElements['mesh']
 
-export type TargetMesh = THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial & SplatMaterialType> & {
-  ready: boolean
-  sorted: boolean
-  pm: THREE.Matrix4
-  vm1: THREE.Matrix4
-  vm2: THREE.Matrix4
-  viewport: THREE.Vector4
-}
-
-export type SharedState = {
-  url: string,
-  gl: THREE.WebGLRenderer
-  worker: Worker
-  manager: THREE.LoadingManager
-  loaded: boolean
-  loadedVertexCount: number
-  rowLength: number
-  maxVertexes: number
-  chunkSize: number
-  bufferTextureWidth: number
-  bufferTextureHeight: number
-  centerAndScaleData: Float32Array
-  covAndColorData: Uint32Array
-  covAndColorTexture: THREE.DataTexture
-  centerAndScaleTexture: THREE.DataTexture
-  connect(target: TargetMesh): () => void
-  update(target: TargetMesh, camera: THREE.Camera, hashed: boolean): void
-}
-
-export function Splat({ src, toneMapped = false, alphaTest = 0, alphaHash = false, chunkSize = 20000, ...props }: SplatProps) {
+export function Splat({ src, toneMapped = false, alphaTest = 0, alphaHash = false, chunkSize = 25000, ...props }: SplatProps) {
   extend({ SplatMaterial })
 
   const ref = React.useRef<TargetMesh>(null!)
@@ -85,7 +48,7 @@ export function Splat({ src, toneMapped = false, alphaTest = 0, alphaHash = fals
   return (
     <mesh ref={ref} frustumCulled={false} {...props}>
       <splatMaterial
-        key={`${alphaTest}/${alphaHash}${SplatMaterial.key}`}
+        key={`${src}/${alphaTest}/${alphaHash}${SplatMaterial.key}`}
         transparent={!alphaHash}
         depthTest
         alphaTest={alphaHash ? 0 : alphaTest}

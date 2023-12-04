@@ -5,7 +5,7 @@
 
 import * as THREE from 'three'
 import { createWorker } from './worker'
-import { SharedState, TargetMesh } from './Splat'
+import type { TargetMesh, SharedState } from './types'
 
 export class SplatLoader extends THREE.Loader {
   // WebGLRenderer, needs to be filled out!
@@ -31,19 +31,24 @@ export class SplatLoader extends THREE.Loader {
       manager: this.manager,
       update: (target: TargetMesh, camera: THREE.Camera, hashed: boolean) => update(camera, shared, target, hashed),
       connect: (target: TargetMesh) => connect(shared, target),
+      loading: false,
       loaded: false,
       loadedVertexCount: 0,
       chunkSize: this.chunkSize,
+      totalDownloadBytes: 0,
+      numVertices: 0,
       rowLength: 3 * 4 + 3 * 4 + 4 + 4,
       maxVertexes: 0,
       bufferTextureWidth: 0,
       bufferTextureHeight: 0,
+      stream: null!,
       centerAndScaleData: null!,
       covAndColorData: null!,
       covAndColorTexture: null!,
       centerAndScaleTexture: null!,
+      onProgress,
     }
-    load(shared, onProgress)
+    load(shared)
       .then(onLoad)
       .catch((e) => {
         onError?.(e)
@@ -52,25 +57,24 @@ export class SplatLoader extends THREE.Loader {
   }
 }
 
-async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => void) {
+async function load(shared: SharedState) {
   shared.manager.itemStart(shared.url)
   const data = await fetch(shared.url)
-  if (data.body === null) throw 'Failed to fetch file'
-  const reader = data.body.getReader()
-  let bytesDownloaded = 0
-  let bytesProcessed = 0
-  let _totalDownloadBytes = data.headers.get('Content-Length')
-  let totalDownloadBytes = _totalDownloadBytes ? parseInt(_totalDownloadBytes) : undefined
-  if (totalDownloadBytes == undefined) throw 'Failed to get content length'
 
-  let numVertices = Math.floor(totalDownloadBytes / shared.rowLength)
+  if (data.body === null) throw 'Failed to fetch file'
+  let _totalDownloadBytes = data.headers.get('Content-Length')
+  const totalDownloadBytes = _totalDownloadBytes ? parseInt(_totalDownloadBytes) : undefined
+  if (totalDownloadBytes == undefined) throw 'Failed to get content length'
+  shared.stream = data.body.getReader()
+  shared.totalDownloadBytes = totalDownloadBytes
+  shared.numVertices = Math.floor(shared.totalDownloadBytes / shared.rowLength)
   const context = shared.gl.getContext()
   let maxTextureSize = context.getParameter(context.MAX_TEXTURE_SIZE)
   shared.maxVertexes = maxTextureSize * maxTextureSize
 
-  if (numVertices > shared.maxVertexes) numVertices = shared.maxVertexes
+  if (shared.numVertices > shared.maxVertexes) shared.numVertices = shared.maxVertexes
   shared.bufferTextureWidth = maxTextureSize
-  shared.bufferTextureHeight = Math.floor((numVertices - 1) / maxTextureSize) + 1
+  shared.bufferTextureHeight = Math.floor((shared.numVertices - 1) / maxTextureSize) + 1
 
   shared.centerAndScaleData = new Float32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
   shared.covAndColorData = new Uint32Array(shared.bufferTextureWidth * shared.bufferTextureHeight * 4)
@@ -81,6 +85,7 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
     THREE.RGBAFormat,
     THREE.FloatType,
   )
+
   shared.centerAndScaleTexture.needsUpdate = true
   shared.covAndColorTexture = new THREE.DataTexture(
     shared.covAndColorData,
@@ -91,76 +96,84 @@ async function load(shared: SharedState, onProgress?: (event: ProgressEvent) => 
   )
   shared.covAndColorTexture.internalFormat = 'RGBA32UI'
   shared.covAndColorTexture.needsUpdate = true
-
-  async function lazyLoad() {
-    const chunks: Array<Uint8Array> = []
-    let lastReportedProgress = 0
-    const lengthComputable = totalDownloadBytes !== 0
-    while (true) {
-      try {
-        const { value, done } = await reader.read()
-        if (done) break
-        bytesDownloaded += value.length
-
-        if (totalDownloadBytes != undefined) {
-          const percent = (bytesDownloaded / totalDownloadBytes) * 100
-          if (onProgress && percent - lastReportedProgress > 1) {
-            const event = new ProgressEvent('progress', { lengthComputable, loaded: bytesDownloaded, total: totalDownloadBytes })
-            onProgress(event)
-            lastReportedProgress = percent
-          }
-        }
-
-        chunks.push(value)
-        const bytesRemains = bytesDownloaded - bytesProcessed
-        if (totalDownloadBytes != undefined && bytesRemains > shared.rowLength * shared.chunkSize) {
-          let vertexCount = Math.floor(bytesRemains / shared.rowLength)
-          const concatenatedChunksbuffer = new Uint8Array(bytesRemains)
-          let offset = 0
-          for (const chunk of chunks) {
-            concatenatedChunksbuffer.set(chunk, offset)
-            offset += chunk.length
-          }
-          chunks.length = 0
-          if (bytesRemains > vertexCount * shared.rowLength) {
-            const extra_data = new Uint8Array(bytesRemains - vertexCount * shared.rowLength)
-            extra_data.set(concatenatedChunksbuffer.subarray(bytesRemains - extra_data.length, bytesRemains), 0)
-            chunks.push(extra_data)
-          }
-          const buffer = new Uint8Array(vertexCount * shared.rowLength)
-          buffer.set(concatenatedChunksbuffer.subarray(0, buffer.byteLength), 0)
-          const matrices = pushDataBuffer(shared, buffer.buffer, vertexCount)
-          shared.worker.postMessage({ method: 'push', length: numVertices * 16, matrices: matrices.buffer }, [matrices.buffer])
-          bytesProcessed += vertexCount * shared.rowLength
-
-          if (onProgress) {
-            const event = new ProgressEvent('progress', { lengthComputable, loaded: totalDownloadBytes, total: totalDownloadBytes })
-            onProgress(event)
-          }
-        }
-      } catch (error) {
-        console.error(error)
-        break
-      }
-    }
-
-    if (bytesDownloaded - bytesProcessed > 0) {
-      // Concatenate the chunks into a single Uint8Array
-      let concatenatedChunks = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0))
-      let offset = 0
-      for (const chunk of chunks) {
-        concatenatedChunks.set(chunk, offset)
-        offset += chunk.length
-      }
-      let numVertices = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
-      const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
-      shared.worker.postMessage({ method: 'push', length: numVertices * 16, matrices: matrices.buffer }, [matrices.buffer])
-    }
-    shared.loaded = true
-    shared.manager.itemEnd(shared.url)
-  }
-  lazyLoad()
   return shared
+}
+
+async function lazyLoad(shared: SharedState) {
+  shared.loading = true
+  let bytesDownloaded = 0
+  let bytesProcessed = 0
+  const chunks: Array<Uint8Array> = []
+  let lastReportedProgress = 0
+  const lengthComputable = shared.totalDownloadBytes !== 0
+  while (true) {
+    try {
+      const { value, done } = await shared.stream.read()
+      if (done) break
+      bytesDownloaded += value.length
+
+      if (shared.totalDownloadBytes != undefined) {
+        const percent = (bytesDownloaded / shared.totalDownloadBytes) * 100
+        if (shared.onProgress && percent - lastReportedProgress > 1) {
+          const event = new ProgressEvent('progress', { lengthComputable, loaded: bytesDownloaded, total: shared.totalDownloadBytes })
+          shared.onProgress(event)
+          lastReportedProgress = percent
+        }
+      }
+
+      chunks.push(value)
+      const bytesRemains = bytesDownloaded - bytesProcessed
+      if (shared.totalDownloadBytes != undefined && bytesRemains > shared.rowLength * shared.chunkSize) {
+        let vertexCount = Math.floor(bytesRemains / shared.rowLength)
+        const concatenatedChunksbuffer = new Uint8Array(bytesRemains)
+        let offset = 0
+        for (const chunk of chunks) {
+          concatenatedChunksbuffer.set(chunk, offset)
+          offset += chunk.length
+        }
+        chunks.length = 0
+        if (bytesRemains > vertexCount * shared.rowLength) {
+          const extra_data = new Uint8Array(bytesRemains - vertexCount * shared.rowLength)
+          extra_data.set(concatenatedChunksbuffer.subarray(bytesRemains - extra_data.length, bytesRemains), 0)
+          chunks.push(extra_data)
+        }
+        const buffer = new Uint8Array(vertexCount * shared.rowLength)
+        buffer.set(concatenatedChunksbuffer.subarray(0, buffer.byteLength), 0)
+        const matrices = pushDataBuffer(shared, buffer.buffer, vertexCount)
+        shared.worker.postMessage({ method: 'push', src: shared.url, length: shared.numVertices * 16, matrices: matrices.buffer }, [
+          matrices.buffer,
+        ])
+        bytesProcessed += vertexCount * shared.rowLength
+
+        if (shared.onProgress) {
+          const event = new ProgressEvent('progress', {
+            lengthComputable,
+            loaded: shared.totalDownloadBytes,
+            total: shared.totalDownloadBytes,
+          })
+          shared.onProgress(event)
+        }
+      }
+    } catch (error) {
+      console.error(error)
+      break
+    }
+  }
+
+  if (bytesDownloaded - bytesProcessed > 0) {
+    // Concatenate the chunks into a single Uint8Array
+    let concatenatedChunks = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0))
+    let offset = 0
+    for (const chunk of chunks) {
+      concatenatedChunks.set(chunk, offset)
+      offset += chunk.length
+    }
+    let numVertices = Math.floor(concatenatedChunks.byteLength / shared.rowLength)
+    const matrices = pushDataBuffer(shared, concatenatedChunks.buffer, numVertices)
+    shared.worker.postMessage({ method: 'push', src: shared.url, length: numVertices * 16, matrices: matrices.buffer }, [matrices.buffer])
+  }
+  shared.loaded = true
+  shared.manager.itemEnd(shared.url)
 }
 
 function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, hashed: boolean) {
@@ -181,12 +194,14 @@ function update(camera: THREE.Camera, shared: SharedState, target: TargetMesh, h
       target.modelViewMatrix.elements[10],
       target.modelViewMatrix.elements[14],
     ])
-    shared.worker.postMessage({ method: 'sort', key: target.uuid, view: view.buffer, hashed }, [view.buffer])
+    shared.worker.postMessage({ method: 'sort', src: shared.url, key: target.uuid, view: view.buffer, hashed }, [view.buffer])
     if (hashed && shared.loaded) target.sorted = true
   }
 }
 
 function connect(shared: SharedState, target: TargetMesh) {
+  if (!shared.loading) lazyLoad(shared)
+
   target.ready = false
   target.pm = new THREE.Matrix4()
   target.vm1 = new THREE.Matrix4()
@@ -227,7 +242,8 @@ function connect(shared: SharedState, target: TargetMesh) {
     while (true) {
       const centerAndScaleTextureProperties = shared.gl.properties.get(shared.centerAndScaleTexture)
       const covAndColorTextureProperties = shared.gl.properties.get(shared.covAndColorTexture)
-      if (centerAndScaleTextureProperties?.__webglTexture && covAndColorTextureProperties?.__webglTexture) break
+      if (centerAndScaleTextureProperties?.__webglTexture && covAndColorTextureProperties?.__webglTexture && shared.loadedVertexCount > 0)
+        break
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     target.ready = true
@@ -294,7 +310,6 @@ function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCoun
 
     // Store scale and transparent to remove splat in sorting process
     mtx.elements[15] = (Math.max(scale.x, scale.y, scale.z) * u_buffer[32 * i + 24 + 3]) / 255.0
-
     for (let j = 0; j < 16; j++) matrices[i * 16 + j] = mtx.elements[j]
   }
 
@@ -344,6 +359,7 @@ function pushDataBuffer(shared: SharedState, buffer: ArrayBufferLike, vertexCoun
       shared.covAndColorData,
       shared.loadedVertexCount * 4,
     )
+    shared.gl.resetState()
 
     shared.loadedVertexCount += width * height
     vertexCount -= width * height
